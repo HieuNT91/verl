@@ -81,8 +81,15 @@ class RayDAPOTrainer(RayPPOTrainer):
         # Minimum repeat times for each question (to avoid cases when std = 0)
         self.min_repeat_times = getattr(self.config.algorithm, 'min_repeat_times', 4)
         
+        # Enable/disable adaptive repeat times (default: True)
+        self.enable_adaptive_repeat = getattr(self.config.algorithm, 'enable_adaptive_repeat', True)
+        print(f"Adaptive repeat training: {'enabled' if self.enable_adaptive_repeat else 'disabled'}")
+        
         # Estimated std score for each question (used for adaptive repeat times)
         self.estimated_std_score_per_question = {}
+        
+        # Cache for extreme stats (populated after epoch finalization)
+        self._last_extreme_stats = None
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -413,22 +420,30 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 # Add per-question statistics to metrics
                 per_question_summary = self.get_per_question_statistics_summary()
-                extreme_stats = self._analyze_extreme_question_stats()
                 
-                metrics.update({
+                # Only include extreme stats if we have finalized epoch data
+                # (extreme stats are only meaningful after epoch finalization)
+                basic_metrics = {
                     "per_question/total_questions": per_question_summary["total_questions"],
                     "per_question/avg_mean_acc": per_question_summary["avg_mean_acc"],
                     "per_question/avg_mean_score": per_question_summary["avg_mean_score"],
                     "per_question/avg_std_acc": per_question_summary["avg_std_acc"],
-                    "per_question/avg_std_score": per_question_summary["avg_std_score"],
-                    "extreme_stats/all_zero_acc": extreme_stats["all_zero_acc"],
-                    "extreme_stats/all_one_acc": extreme_stats["all_one_acc"],
-                    "extreme_stats/middle_acc": extreme_stats["middle_acc"],
-                    "extreme_stats/zero_std_acc": extreme_stats["zero_std_acc"],
-                    "extreme_stats/zero_std_score": extreme_stats["zero_std_score"],
-                    "extreme_stats/high_std_acc": extreme_stats["high_std_acc"],
-                    "extreme_stats/high_std_score": extreme_stats["high_std_score"]
-                })
+                    "per_question/avg_std_score": per_question_summary["avg_std_score"]
+                }
+                
+                # Add extreme stats if available (only after epoch finalization)
+                if hasattr(self, '_last_extreme_stats') and self._last_extreme_stats:
+                    basic_metrics.update({
+                        "extreme_stats/all_zero_acc": self._last_extreme_stats["all_zero_acc"],
+                        "extreme_stats/all_one_acc": self._last_extreme_stats["all_one_acc"],
+                        "extreme_stats/middle_acc": self._last_extreme_stats["middle_acc"],
+                        "extreme_stats/zero_std_acc": self._last_extreme_stats["zero_std_acc"],
+                        "extreme_stats/zero_std_score": self._last_extreme_stats["zero_std_score"],
+                        "extreme_stats/high_std_acc": self._last_extreme_stats["high_std_acc"],
+                        "extreme_stats/high_std_score": self._last_extreme_stats["high_std_score"]
+                    })
+                
+                metrics.update(basic_metrics)
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
@@ -550,9 +565,12 @@ class RayDAPOTrainer(RayPPOTrainer):
         # Save to file
         self._save_per_question_statistics_to_file()
         
-        # Log extreme statistics at the end of each epoch
+        # Analyze and log extreme statistics at the end of each epoch
         extreme_stats = self._analyze_extreme_question_stats()
         self._log_extreme_stats(extreme_stats)
+        
+        # Store extreme stats for use in metrics logging
+        self._last_extreme_stats = extreme_stats
     
     def _save_per_question_statistics_to_file(self):
         """
@@ -594,6 +612,7 @@ class RayDAPOTrainer(RayPPOTrainer):
     def get_per_question_statistics_summary(self):
         """
         Get a summary of per-question statistics.
+        Handles both current epoch data (before finalization) and finalized epoch data.
         
         Returns:
             dict: Summary containing total questions tracked and average metrics across all questions
@@ -603,18 +622,37 @@ class RayDAPOTrainer(RayPPOTrainer):
         
         total_questions = len(self.per_question_statistics)
         
-        # Get latest epoch statistics for each question
+        # Collect statistics - use finalized data if available, otherwise compute from current epoch
         current_mean_accs = []
         current_mean_scores = []
         current_std_accs = []
         current_std_scores = []
         
         for stats in self.per_question_statistics.values():
-            if stats['mean_acc_per_epoch']:
+            # Try to use finalized epoch data first
+            if (stats['mean_acc_per_epoch'] and stats['std_acc_per_epoch'] and 
+                stats['mean_score_per_epoch'] and stats['std_score_per_epoch']):
+                # Use latest finalized epoch data
                 current_mean_accs.append(stats['mean_acc_per_epoch'][-1])
                 current_mean_scores.append(stats['mean_score_per_epoch'][-1])
                 current_std_accs.append(stats['std_acc_per_epoch'][-1])
                 current_std_scores.append(stats['std_score_per_epoch'][-1])
+            elif (stats['current_epoch_acc_values'] or stats['current_epoch_score_values']):
+                # Fall back to current epoch data (compute on the fly)
+                acc_values = stats['current_epoch_acc_values']
+                score_values = stats['current_epoch_score_values']
+                
+                if acc_values:
+                    mean_acc = np.mean(acc_values)
+                    std_acc = np.std(acc_values) if len(acc_values) > 1 else 0.0
+                    current_mean_accs.append(mean_acc)
+                    current_std_accs.append(std_acc)
+                
+                if score_values:
+                    mean_score = np.mean(score_values)
+                    std_score = np.std(score_values) if len(score_values) > 1 else 0.0
+                    current_mean_scores.append(mean_score)
+                    current_std_scores.append(std_score)
         
         return {
             "total_questions": total_questions,
@@ -645,7 +683,8 @@ class RayDAPOTrainer(RayPPOTrainer):
             'estimated_std_score_per_question': self.estimated_std_score_per_question,
             'current_epoch': self.current_epoch,
             'ema_decay': self.ema_decay,
-            'min_repeat_times': self.min_repeat_times
+            'min_repeat_times': self.min_repeat_times,
+            'enable_adaptive_repeat': self.enable_adaptive_repeat
         }
         
         stats_path = os.path.join(local_global_step_folder, "per_question_stats.json")
@@ -688,10 +727,14 @@ class RayDAPOTrainer(RayPPOTrainer):
                         # Only restore min_repeat_times if it was saved, otherwise keep config value
                         if 'min_repeat_times' in stats_data:
                             self.min_repeat_times = stats_data['min_repeat_times']
+                        # Only restore enable_adaptive_repeat if it was saved, otherwise keep config value
+                        if 'enable_adaptive_repeat' in stats_data:
+                            self.enable_adaptive_repeat = stats_data['enable_adaptive_repeat']
                         
                         print(f"Loaded per-question statistics from {stats_path}")
                         print(f"Restored {len(self.per_question_statistics)} question statistics")
                         print(f"Resumed from epoch {self.current_epoch}")
+                        print(f"Adaptive repeat mode: {'enabled' if self.enable_adaptive_repeat else 'disabled'}")
                     except Exception as e:
                         print(f"Warning: Failed to load per-question statistics: {e}")
                         # Initialize empty if loading fails
@@ -705,6 +748,7 @@ class RayDAPOTrainer(RayPPOTrainer):
     def _calculate_adaptive_repeat_times(self, batch_dict):
         """
         Calculate adaptive repeat times for each question based on estimated std scores.
+        If adaptive repeat is disabled, returns uniform repeat times.
         
         Args:
             batch_dict: The original batch dictionary containing 'index' field with question UUIDs
@@ -720,6 +764,12 @@ class RayDAPOTrainer(RayPPOTrainer):
         question_uuids = batch_dict['index']
         if not isinstance(question_uuids, (list, tuple, np.ndarray)):
             question_uuids = [question_uuids]
+        
+        # If adaptive repeat is disabled, always use uniform repeat times
+        if not self.enable_adaptive_repeat:
+            default_repeat = self.config.actor_rollout_ref.rollout.n
+            print(f"Adaptive repeat disabled - using uniform repeat times: {default_repeat}")
+            return {uuid: default_repeat for uuid in question_uuids}
         
         # For first epoch, use default repeat times
         if self.current_epoch == 0:
@@ -834,12 +884,14 @@ class RayDAPOTrainer(RayPPOTrainer):
     def _analyze_extreme_question_stats(self):
         """
         Analyze and log questions with extreme accuracy/std patterns.
+        Only analyzes questions that have finalized epoch data.
         
         Returns:
             dict: Statistics about extreme cases
         """
         if not self.per_question_statistics:
-            return {"all_zero_acc": 0, "all_one_acc": 0, "middle_acc": 0, "zero_std": 0, "high_std": 0}
+            return {"total_questions": 0, "all_zero_acc": 0, "all_one_acc": 0, "middle_acc": 0, 
+                   "zero_std_acc": 0, "zero_std_score": 0, "high_std_acc": 0, "high_std_score": 0}
         
         all_zero_acc = 0
         all_one_acc = 0
@@ -848,38 +900,41 @@ class RayDAPOTrainer(RayPPOTrainer):
         zero_std_score = 0
         high_std_acc = 0  # std > 0.3
         high_std_score = 0  # std > 0.3
-        breakpoint()
+        total_analyzed = 0
+        
         for uuid, stats in self.per_question_statistics.items():
-            if not stats['mean_acc_per_epoch']:
+            # Only analyze questions that have finalized epoch data
+            if not stats['mean_acc_per_epoch'] or not stats['std_acc_per_epoch'] or not stats['std_score_per_epoch']:
                 continue
                 
             # Get latest epoch statistics
             latest_mean_acc = stats['mean_acc_per_epoch'][-1]
-            latest_std_acc = stats['std_acc_per_epoch'][-1] if stats['std_acc_per_epoch'] else 0.0
-            latest_std_score = stats['std_score_per_epoch'][-1] if stats['std_score_per_epoch'] else 0.0
-            # Categorize by accuracy
-            if latest_mean_acc == 0.0:
+            latest_std_acc = stats['std_acc_per_epoch'][-1]
+            latest_std_score = stats['std_score_per_epoch'][-1]
+            
+            total_analyzed += 1
+            
+            # Categorize by accuracy (use small epsilon for floating point comparison)
+            if abs(latest_mean_acc - 0.0) < 1e-6:
                 all_zero_acc += 1
-            elif latest_mean_acc == 1.0:
+            elif abs(latest_mean_acc - 1.0) < 1e-6:
                 all_one_acc += 1
             else:
                 middle_acc += 1
             
             # Categorize by std
-            if latest_std_acc == 0.0:
+            if abs(latest_std_acc - 0.0) < 1e-6:
                 zero_std_acc += 1
             elif latest_std_acc > 0.3:
                 high_std_acc += 1
                 
-            if latest_std_score == 0.0:
+            if abs(latest_std_score - 0.0) < 1e-6:
                 zero_std_score += 1
             elif latest_std_score > 0.3:
                 high_std_score += 1
         
-        total_questions = len(self.per_question_statistics)
-        
         return {
-            "total_questions": total_questions,
+            "total_questions": total_analyzed,
             "all_zero_acc": all_zero_acc,
             "all_one_acc": all_one_acc,
             "middle_acc": middle_acc,
