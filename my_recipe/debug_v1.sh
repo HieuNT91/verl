@@ -27,6 +27,8 @@ train_prompt_bsz=8
 gen_prompt_bsz=$((train_prompt_bsz*1))
 n_resp_per_prompt=4
 train_prompt_mini_bsz=4
+min_repeat_times=4
+ema_decay=0.9
 
 # Ray
 NNODES=${NNODES:-1}
@@ -52,6 +54,7 @@ gen_tp=1
 
 python3 -m my_recipe.main_dapo \
     data.train_files="${TRAIN_FILE}" \
+    data.val_files="${TEST_FILE}" \
     data.prompt_key=prompt \
     data.truncation='left' \
     data.max_prompt_length=${max_prompt_length} \
@@ -62,6 +65,8 @@ python3 -m my_recipe.main_dapo \
     algorithm.adv_estimator=${adv_estimator} \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
+    algorithm.ema_decay=${ema_decay} \
+    algorithm.min_repeat_times=${min_repeat_times} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
@@ -126,4 +131,4 @@ python3 -m my_recipe.main_dapo \
     trainer.resume_mode=auto \
     data.shuffle=True \
     trainer.log_val_generations=960 \
-    # data.val_files="${TEST_FILE}" \
+    

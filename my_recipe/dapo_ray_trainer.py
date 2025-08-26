@@ -479,7 +479,7 @@ class RayDAPOTrainer(RayPPOTrainer):
         
         for i in range(max_entries):
             # Get question UUID (cycle through if fewer UUIDs than entries)
-            question_uuid = question_uuids[i % len(question_uuids)] if question_uuids else f"unknown_{i}"
+            question_uuid = question_uuids[i % len(question_uuids)] if len(question_uuids) > 0 else f"unknown_{i}"
             
             # Get acc and score values (use 0.0 as default if not available)
             acc = acc_values[i] if i < len(acc_values) else 0.0
@@ -827,7 +827,7 @@ class RayDAPOTrainer(RayPPOTrainer):
         
         # Calculate average repeat times
         total_repeats = sum(repeat_times_per_question.get(uuid, 1) for uuid in question_uuids)
-        avg_repeats = total_repeats / len(question_uuids) if question_uuids else 1
+        avg_repeats = total_repeats / len(question_uuids) if len(question_uuids) > 0 else 1
         
         return avg_repeats
     
@@ -848,7 +848,7 @@ class RayDAPOTrainer(RayPPOTrainer):
         zero_std_score = 0
         high_std_acc = 0  # std > 0.3
         high_std_score = 0  # std > 0.3
-        
+        breakpoint()
         for uuid, stats in self.per_question_statistics.items():
             if not stats['mean_acc_per_epoch']:
                 continue
@@ -857,7 +857,6 @@ class RayDAPOTrainer(RayPPOTrainer):
             latest_mean_acc = stats['mean_acc_per_epoch'][-1]
             latest_std_acc = stats['std_acc_per_epoch'][-1] if stats['std_acc_per_epoch'] else 0.0
             latest_std_score = stats['std_score_per_epoch'][-1] if stats['std_score_per_epoch'] else 0.0
-            
             # Categorize by accuracy
             if latest_mean_acc == 0.0:
                 all_zero_acc += 1

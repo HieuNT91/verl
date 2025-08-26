@@ -23,6 +23,8 @@ algorithm:
     enable: False # We try to avoid forgetting to set enable
     metric: null # acc / score / seq_reward / seq_final_reward / ...
     max_num_gen_batches: 0 # Non-positive values mean no upper limit
-
+  ema_decay: 0.9
+  min_repeat_times: 4
+  
 trainer:
   project_name: verl-dapo

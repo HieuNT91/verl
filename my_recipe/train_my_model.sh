@@ -27,6 +27,8 @@ train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
 n_resp_per_prompt=16
 train_prompt_mini_bsz=32
+min_repeat_times=4
+ema_decay=0.9
 
 # Ray
 export no_proxy="localhost"
@@ -81,6 +83,8 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
+    algorithm.ema_decay=${ema_decay} \
+    algorithm.min_repeat_times=${min_repeat_times} \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
