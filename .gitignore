@@ -1,4 +1,5 @@
-
+tensorboard_log/
+notebook/
 **/*.pt
 **/checkpoints
 **/wget-log
@@ -8,7 +9,10 @@
 **/*.tar.gz
 **/playground
 **/wandb
-
+**/*.safetensors
+**/blobs
+ckpts/
+apex/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -59,7 +63,6 @@ coverage.xml
 *,cover
 .hypothesis/
 pytest.ini
-output.txt
 
 # Translations
 *.mo

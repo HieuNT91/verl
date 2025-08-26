@@ -51,10 +51,10 @@ class Tracking:
 
         if "tracking" in default_backend or "wandb" in default_backend:
             import wandb
-
             settings = None
-            if config and config["trainer"].get("wandb_proxy", None):
-                settings = wandb.Settings(https_proxy=config["trainer"]["wandb_proxy"])
+            config = None
+            # if config and config["trainer"].get("wandb_proxy", None):
+            #     settings = wandb.Settings(https_proxy=config["trainer"]["wandb_proxy"])
             wandb.init(project=project_name, name=experiment_name, config=config, settings=settings)
             self.logger["wandb"] = wandb
 
