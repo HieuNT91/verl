@@ -27,7 +27,7 @@ train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
 n_resp_per_prompt=16
 train_prompt_mini_bsz=32
-min_repeat_times=4
+min_repeat_times=2
 ema_decay=0.9
 
 # Ray

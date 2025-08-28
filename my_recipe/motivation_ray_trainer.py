@@ -906,23 +906,18 @@ class RayDAPOTrainer(RayPPOTrainer):
                 acc_vals = np.asarray([pool_acc[i] for i in idxs], dtype=float)
                 std_per_uuid[uuid] = float(np.std(acc_vals))
 
-        # Compute allocation based on std
+        # Compute allocation based on std without normalizing by total std
+        # Rescale std in [0, 0.5] -> [0, 1] and use scaled_std * rollout.n as allocation
         default_repeat = self.config.actor_rollout_ref.rollout.n
-        total_budget = default_repeat * max(1, len(question_uuids))
-        total_std = sum(std_per_uuid.values())
 
         repeat_times_per_question: dict[str, int] = {}
-        if total_std == 0:
-            # No variance observed, allocate minimum or uniform within available pool
-            for uuid in question_uuids:
-                repeat_times_per_question[uuid] = min(default_repeat, max(self.min_repeat_times, 1))
-        else:
-            for uuid in question_uuids:
-                proportion = std_per_uuid[uuid] / total_std
-                alloc = int(total_budget * proportion)
-                alloc = max(self.min_repeat_times, alloc)
-                alloc = min(default_repeat, alloc)
-                repeat_times_per_question[uuid] = alloc
+        for uuid in question_uuids:
+            raw_std = std_per_uuid.get(uuid, 0.0)
+            scaled_std = min(max(raw_std / 0.5, 0.0), 1.0)
+            alloc = int(scaled_std * default_repeat)
+            alloc = max(self.min_repeat_times, alloc)
+            alloc = min(default_repeat, alloc)
+            repeat_times_per_question[uuid] = alloc
 
         # Randomly select indices per question according to allocation
         if self.selection_random_seed is not None:

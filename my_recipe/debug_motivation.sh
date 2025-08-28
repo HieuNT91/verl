@@ -52,7 +52,7 @@ infer_ppo_max_token_len=$(((max_prompt_length + max_response_length) / sp_size))
 offload=True
 gen_tp=1
 
-python3 -m my_recipe.main_dapo \
+python3 -m my_recipe.main_motivation \
     data.train_files="${TRAIN_FILE}" \
     data.val_files="${TEST_FILE}" \
     data.prompt_key=prompt \
