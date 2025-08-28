@@ -926,6 +926,7 @@ class RayDAPOTrainer(RayPPOTrainer):
             rng = np.random.default_rng()
 
         selected_indices: list[int] = []
+        per_uuid_selected_indices: dict[str, list[int]] = {}
         for uuid in question_uuids:
             available = uuid_to_indices.get(uuid, [])
             k = min(len(available), repeat_times_per_question.get(uuid, 0))
@@ -935,6 +936,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                 chosen = available
             else:
                 chosen = rng.choice(available, size=k, replace=False).tolist()
+            per_uuid_selected_indices[uuid] = chosen
             selected_indices.extend(chosen)
 
         # If nothing selected due to corner cases, fall back to full pool
@@ -943,6 +945,39 @@ class RayDAPOTrainer(RayPPOTrainer):
             # Adjust repeats to uniform minimum within pool size
             for uuid in question_uuids:
                 repeat_times_per_question[uuid] = min(default_repeat, max(self.min_repeat_times, 1))
+
+        # Ensure divisibility by world size by padding selections if necessary
+        world_size = self.actor_rollout_wg.world_size
+        if world_size > 0:
+            remainder = len(selected_indices) % world_size
+            if remainder != 0:
+                need = world_size - remainder
+                extra_indices: list[int] = []
+                # First, try to take unused indices from the same question pools
+                for uuid in question_uuids:
+                    if need == 0:
+                        break
+                    available = uuid_to_indices.get(uuid, [])
+                    already = set(per_uuid_selected_indices.get(uuid, []))
+                    candidates = [idx for idx in available if idx not in already]
+                    if not candidates:
+                        continue
+                    take = min(need, len(candidates))
+                    add = rng.choice(candidates, size=take, replace=False).tolist()
+                    per_uuid_selected_indices.setdefault(uuid, []).extend(add)
+                    repeat_times_per_question[uuid] = repeat_times_per_question.get(uuid, 0) + len(add)
+                    extra_indices.extend(add)
+                    need -= len(add)
+                # If still need more, allow duplicating already selected indices (no new rollouts)
+                if need > 0 and len(selected_indices) > 0:
+                    dup_add = rng.choice(selected_indices, size=need, replace=True).tolist()
+                    extra_indices.extend(dup_add)
+                    # Update per-question allocations for duplicates
+                    for idx in dup_add:
+                        uuid = pool_uuids[idx]
+                        repeat_times_per_question[uuid] = repeat_times_per_question.get(uuid, 0) + 1
+                # Append extras to selections
+                selected_indices.extend(extra_indices)
 
         # Create the selected subset DataProto
         selected_batch = pool_batch.select_idxs(selected_indices)
