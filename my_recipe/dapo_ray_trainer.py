@@ -132,7 +132,7 @@ class RayDAPOTrainer(RayPPOTrainer):
             self.current_epoch = epoch
             for batch_dict in self.train_dataloader:
                 metrics = {}
-
+                breakpoint()
                 with marked_timer("start_profile", timing_raw):
                     self._start_profiling(
                         not prev_step_profile and curr_step_profile

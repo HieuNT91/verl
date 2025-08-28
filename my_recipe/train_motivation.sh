@@ -1,6 +1,6 @@
 #!/bin/bash
-project_name='DEBUG'
-exp_name='allocation'
+project_name='FIX-DAPO'
+exp_name='DAPO-Qwen2.5-Math-7B-v2-dapo'
 
 adv_estimator=grpo
 
@@ -13,9 +13,9 @@ clip_ratio_low=0.2
 clip_ratio_high=0.28
 
 max_prompt_length=$((1024))
-max_response_length=$((1024 * 3))
+max_response_length=$((1024 * 10))
 enable_overlong_buffer=True
-overlong_buffer_len=$((512))
+overlong_buffer_len=$((1024 * 3))
 overlong_penalty_factor=1.0
 
 loss_agg_mode="token-mean"
@@ -23,20 +23,28 @@ enable_adaptive_repeat=False
 enable_filter_groups=False
 filter_groups_metric=acc
 max_num_gen_batches=1
-train_prompt_bsz=8
+train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=4
-train_prompt_mini_bsz=4
-min_repeat_times=2
+n_resp_per_prompt=16
+train_prompt_mini_bsz=32
+min_repeat_times=4
 ema_decay=0.9
 
 # Ray
+export no_proxy="localhost"
+export RAY_ADDRESS="http://${RAY_IP:-localhost}:8265" # The Ray cluster address to connect to
+export WORKING_DIR="${PWD}" # The local directory to package to the Ray cluster
+# Set the runtime environment like env vars and pip packages for the Ray cluster in yaml
+export RUNTIME_ENV="./recipe/dapo/runtime_env.yaml" # This sets environment variables for the Ray cluster
+RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
+WORKING_DIR=${WORKING_DIR:-"${PWD}"}
+RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
-MODEL_PATH=${MODEL_PATH:-"${RAY_DATA_HOME}/models/Qwen2.5-0.5B"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
-TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-512.parquet"}
+TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-5120.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
 
 # Algorithm
@@ -52,7 +60,8 @@ infer_ppo_max_token_len=$(((max_prompt_length + max_response_length) / sp_size))
 offload=True
 gen_tp=1
 
-python3 -m my_recipe.main_dapo \
+ray job submit --runtime-env="${RUNTIME_ENV}" \
+    -- python3 -m my_recipe.main_motivation \
     data.train_files="${TRAIN_FILE}" \
     data.val_files="${TEST_FILE}" \
     data.prompt_key=prompt \
@@ -119,16 +128,16 @@ python3 -m my_recipe.main_dapo \
     reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
     reward_model.overlong_buffer.len=${overlong_buffer_len} \
     reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
-    trainer.logger=['tensorboard','console','wandb'] \
+    trainer.logger=['tensorboard','console'] \
     trainer.project_name="${project_name}" \
     trainer.experiment_name="${exp_name}" \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=8 \
     trainer.nnodes="${NNODES}" \
     trainer.val_before_train=False \
-    trainer.test_freq=20 \
-    trainer.save_freq=20 \
-    trainer.total_epochs=1 \
-    trainer.total_training_steps=20 \
+    trainer.test_freq=10 \
+    trainer.save_freq=50 \
+    trainer.total_epochs=10 \
+    trainer.total_training_steps=600 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
     data.shuffle=True \

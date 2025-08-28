@@ -25,7 +25,7 @@ from omegaconf import OmegaConf
 from verl.trainer.ppo.reward import load_reward_manager
 from verl.utils.device import is_cuda_available
 
-from .my_ray_trainer import RayDAPOTrainer
+from .motivation_ray_trainer import RayDAPOTrainer
 
 @hydra.main(config_path="config", config_name="dapo_trainer", version_base=None)
 def main(config):

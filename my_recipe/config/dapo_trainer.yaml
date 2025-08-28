@@ -25,6 +25,7 @@ algorithm:
     max_num_gen_batches: 0 # Non-positive values mean no upper limit
   ema_decay: 0.9
   min_repeat_times: 4
-  
+  enable_adaptive_repeat: False
+
 trainer:
   project_name: verl-dapo
