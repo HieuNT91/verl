@@ -24,6 +24,8 @@ algorithm:
     metric: null # acc / score / seq_reward / seq_final_reward / ...
     max_num_gen_batches: 0 # Non-positive values mean no upper limit
   ema_decay: 0.9
+  enable_adaptive_repeat: False
+  enable_selection_allocation: True
   min_repeat_times: 4
   enable_adaptive_repeat: False
 
