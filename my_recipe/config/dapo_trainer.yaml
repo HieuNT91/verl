@@ -26,8 +26,8 @@ algorithm:
   ema_decay: 0.9
   enable_adaptive_repeat: False
   enable_selection_allocation: True
+  election_random_seed: 1234
   min_repeat_times: 4
-  enable_adaptive_repeat: False
 
 trainer:
   project_name: verl-dapo

@@ -67,6 +67,9 @@ python3 -m my_recipe.main_dapo \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     algorithm.ema_decay=${ema_decay} \
     algorithm.min_repeat_times=${min_repeat_times} \
+    algorithm.enable_selection_allocation=True \
+    algorithm.enable_adaptive_repeat=False \
+    algorithm.election_random_seed=1234 \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \

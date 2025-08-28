@@ -37,9 +37,14 @@ def run_ppo(config) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         default_runtime_env = {
-            "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
-                        "TORCH_NCCL_AVOID_RECORD_STREAMS": "1", "VLLM_USE_V1": "1", "CUDA_VISIBLE_DEVICES": "0", "WANDB_MODE": "offline" }
+            "env_vars": {
+                "TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
+                        }
         }
+        # default_runtime_env = {
+        #     "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN",
+        #                 "TORCH_NCCL_AVOID_RECORD_STREAMS": "1", "VLLM_USE_V1": "1", "CUDA_VISIBLE_DEVICES": "0", "WANDB_MODE": "offline" }
+        # }
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
         runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
         runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
