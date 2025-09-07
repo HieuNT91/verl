@@ -1,6 +1,6 @@
 #!/bin/bash
 project_name='FIX-DAPO'
-exp_name='DAPO-Qwen2.5-Math-7B-v2-dapo'
+exp_name='ALLO-Qwen2.5-Math-7B-v2-grpo'
 
 adv_estimator=grpo
 
@@ -44,7 +44,7 @@ NNODES=${NNODES:-1}
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
 MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
-TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-5120.parquet"}
+TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-17k.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
 
 # Algorithm

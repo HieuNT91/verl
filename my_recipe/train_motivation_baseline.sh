@@ -1,6 +1,6 @@
 #!/bin/bash
-project_name='DAPO'
-exp_name='DAPO-Qwen2.5-Math-7.5B-v2-dapo'
+project_name='GRPO'
+exp_name='Qwen2.5-Math-7B-baseline-grpo-32'
 
 adv_estimator=grpo
 
@@ -19,15 +19,15 @@ overlong_buffer_len=$((1024 * 3))
 overlong_penalty_factor=1.0
 
 loss_agg_mode="token-mean"
-
+enable_adaptive_repeat=False
 enable_filter_groups=False
 filter_groups_metric=acc
-max_num_gen_batches=5
+max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=16
+n_resp_per_prompt=32
 train_prompt_mini_bsz=32
-min_repeat_times=4
+min_repeat_times=2
 ema_decay=0.9
 
 # Ray
@@ -35,14 +35,14 @@ export no_proxy="localhost"
 export RAY_ADDRESS="http://${RAY_IP:-localhost}:8265" # The Ray cluster address to connect to
 export WORKING_DIR="${PWD}" # The local directory to package to the Ray cluster
 # Set the runtime environment like env vars and pip packages for the Ray cluster in yaml
-export RUNTIME_ENV="./recipe/dapo/runtime_env.yaml" # This sets environment variables for the Ray cluster
+export RUNTIME_ENV="./my_recipe/runtime_env.yaml" # This sets environment variables for the Ray cluster
 RAY_ADDRESS=${RAY_ADDRESS:-"http://localhost:8265"}
 WORKING_DIR=${WORKING_DIR:-"${PWD}"}
 RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
-RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/verl"}
-MODEL_PATH=${MODEL_PATH:-"${RAY_DATA_HOME}/models/Qwen2.5-Math-7B"}
+RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-17k.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
@@ -61,7 +61,7 @@ offload=True
 gen_tp=1
 
 ray job submit --runtime-env="${RUNTIME_ENV}" \
-    -- python3 -m recipe.dapo.main_dapo \
+    -- python3 -m my_recipe.main_motivation \
     data.train_files="${TRAIN_FILE}" \
     data.val_files="${TEST_FILE}" \
     data.prompt_key=prompt \
@@ -74,6 +74,11 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.adv_estimator=${adv_estimator} \
     algorithm.use_kl_in_reward=${use_kl_in_reward} \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
+    algorithm.ema_decay=${ema_decay} \
+    algorithm.min_repeat_times=${min_repeat_times} \
+    algorithm.enable_selection_allocation=False \
+    algorithm.enable_adaptive_repeat=False \
+    algorithm.election_random_seed=1234 \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
@@ -83,8 +88,8 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
-    algorithm.ema_decay=${ema_decay} \
-    algorithm.min_repeat_times=${min_repeat_times} \
+    algorithm.enable_adaptive_repeat=${enable_adaptive_repeat} \
+    algorithm.norm_adv_by_std_in_grpo=False \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.use_dynamic_bsz=${use_dynamic_bsz} \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=${use_dynamic_bsz} \
@@ -126,18 +131,18 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     reward_model.overlong_buffer.enable=${enable_overlong_buffer} \
     reward_model.overlong_buffer.len=${overlong_buffer_len} \
     reward_model.overlong_buffer.penalty_factor=${overlong_penalty_factor} \
-    trainer.logger=['tensorboard','console','wandb'] \
+    trainer.logger=['tensorboard','console'] \
     trainer.project_name="${project_name}" \
     trainer.experiment_name="${exp_name}" \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes="${NNODES}" \
-    trainer.val_before_train=True \
-    trainer.test_freq=20 \
-    trainer.save_freq=20 \
-    trainer.total_epochs=13 \
-    trainer.total_training_steps=220 \
+    trainer.test_freq=5 \
+    trainer.save_freq=50 \
+    trainer.total_epochs=20 \
+    trainer.total_training_steps=600 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
     data.shuffle=True \
-    trainer.log_val_generations=960\
-    # trainer.device=npu
+    trainer.val_before_train=True \
+    trainer.log_val_generations=960 \
+    
