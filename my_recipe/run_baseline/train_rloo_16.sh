@@ -1,8 +1,8 @@
 #!/bin/bash
-project_name='Baseline/GRPO'
-exp_name='Qwen2.5-Math-7B-baseline-grpo-16'
+project_name='Baseline'
+exp_name='Qwen2.5-Math-7B-baseline-rloo-16'
 
-adv_estimator=grpo
+adv_estimator=rloo
 
 use_kl_in_reward=False
 kl_coef=0.0

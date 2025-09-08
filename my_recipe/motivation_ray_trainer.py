@@ -100,6 +100,15 @@ class RayDAPOTrainer(RayPPOTrainer):
         # Estimated std score for each question (used for adaptive repeat times)
         self.estimated_std_score_per_question = {}
         
+        # Initialize accumulated token tracking
+        self.accumulated_pool_tokens = 0
+        self.accumulated_selected_tokens = 0
+        self.accumulated_saved_tokens = 0
+
+        # Initialize accumulated rollout tracking
+        self.accumulated_pool_rollouts = 0
+        self.accumulated_selected_rollouts = 0
+        self.accumulated_saved_rollouts = 0
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -237,20 +246,46 @@ class RayDAPOTrainer(RayPPOTrainer):
                         # Update per-question statistics
                         self._update_per_question_statistics(batch_dict, reward_extra_infos_dict)
 
+                        # Always track pool tokens/rollouts (total generated)
+                        pool_tokens = self._count_generated_tokens(new_batch)
+                        pool_rollouts = len(new_batch)
+                        self.accumulated_pool_tokens += pool_tokens
+                        self.accumulated_pool_rollouts += pool_rollouts
+                        
                         # For selection-based allocation, select from pool based on std and then apply KL after selection
                         if self.enable_selection_allocation:
                             # Compare tokens before vs after selection
-                            pool_tokens = self._count_generated_tokens(new_batch)
                             selected_batch, repeat_times_per_question = self._allocate_and_select_from_pool(new_batch, batch_dict)
                             selected_tokens = self._count_generated_tokens(selected_batch)
+                            selected_rollouts = len(selected_batch)
                             saved_tokens = max(0, pool_tokens - selected_tokens)
+                            saved_rollouts = max(0, pool_rollouts - selected_rollouts)
                             saved_ratio = (saved_tokens / pool_tokens) if pool_tokens > 0 else 0.0
+                            
+                            # Update accumulated tracking
+                            self.accumulated_selected_tokens += selected_tokens
+                            self.accumulated_saved_tokens += saved_tokens
+                            self.accumulated_selected_rollouts += selected_rollouts
+                            self.accumulated_saved_rollouts += saved_rollouts
+                            
                             metrics.update({
                                 "tokens/pool_total": pool_tokens,
                                 "tokens/selected_total": selected_tokens,
                                 "tokens/saved_total": saved_tokens,
                                 "tokens/saved_ratio": saved_ratio,
+                                "tokens/accumulated_pool_total": self.accumulated_pool_tokens,
+                                "tokens/accumulated_selected_total": self.accumulated_selected_tokens,
+                                "tokens/accumulated_saved_total": self.accumulated_saved_tokens,
+                                "tokens/accumulated_saved_ratio": (self.accumulated_saved_tokens / self.accumulated_pool_tokens) if self.accumulated_pool_tokens > 0 else 0.0,
+                                "rollouts/pool_total": pool_rollouts,
+                                "rollouts/selected_total": selected_rollouts,
+                                "rollouts/saved_total": saved_rollouts,
+                                "rollouts/accumulated_pool_total": self.accumulated_pool_rollouts,
+                                "rollouts/accumulated_selected_total": self.accumulated_selected_rollouts,
+                                "rollouts/accumulated_saved_total": self.accumulated_saved_rollouts,
+                                "rollouts/accumulated_saved_ratio": (self.accumulated_saved_rollouts / self.accumulated_pool_rollouts) if self.accumulated_pool_rollouts > 0 else 0.0,
                             })
+                            
                             # compute rewards. apply_kl_penalty if available on the selected subset
                             if self.config.algorithm.use_kl_in_reward:
                                 selected_batch, kl_metrics = apply_kl_penalty(
@@ -262,6 +297,19 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                             batch = selected_batch
                         else:
+                            # When not using selection allocation, all pool items are used
+                            self.accumulated_selected_tokens += pool_tokens
+                            self.accumulated_selected_rollouts += pool_rollouts
+                            
+                            metrics.update({
+                                "tokens/pool_total": pool_tokens,
+                                "tokens/accumulated_pool_total": self.accumulated_pool_tokens,
+                                "tokens/accumulated_selected_total": self.accumulated_selected_tokens,
+                                "rollouts/pool_total": pool_rollouts,
+                                "rollouts/accumulated_pool_total": self.accumulated_pool_rollouts,
+                                "rollouts/accumulated_selected_total": self.accumulated_selected_rollouts,
+                            })
+                            
                             # compute rewards. apply_kl_penalty if available
                             if self.config.algorithm.use_kl_in_reward:
                                 new_batch, kl_metrics = apply_kl_penalty(

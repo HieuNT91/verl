@@ -1,6 +1,6 @@
 #!/bin/bash
-project_name='Baseline/GRPO'
-exp_name='Qwen2.5-Math-7B-baseline-grpo-16'
+project_name='Baseline'
+exp_name='Qwen2.5-Math-7B-baseline-dr-grpo-4'
 
 adv_estimator=grpo
 
@@ -25,7 +25,7 @@ filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=16
+n_resp_per_prompt=4
 train_prompt_mini_bsz=32
 min_repeat_times=4
 ema_decay=0.9

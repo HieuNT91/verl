@@ -211,7 +211,7 @@ class _TensorboardAdapter:
 
         from torch.utils.tensorboard import SummaryWriter
 
-        tensorboard_dir = f"/root/code_space/verl/tensorboard_log/{project_name}/{experiment_name}"
+        tensorboard_dir = f"~/tensorboard_log/{project_name}/{experiment_name}"
         os.makedirs(tensorboard_dir, exist_ok=True)
         print(f"Saving tensorboard log to {tensorboard_dir}.")
         self.writer = SummaryWriter(tensorboard_dir)
@@ -399,9 +399,9 @@ class ValidationGenerationsLogger:
 
             # Use the same directory structure as _TensorboardAdapter
             if self.project_name and self.experiment_name:
-                default_dir = os.path.join("tensorboard_log", self.project_name, self.experiment_name)
+                default_dir = os.path.join("~/tensorboard_log", self.project_name, self.experiment_name)
             else:
-                default_dir = "tensorboard_log"
+                default_dir = "~/tensorboard_log"
 
             tensorboard_dir = default_dir
             os.makedirs(tensorboard_dir, exist_ok=True)
