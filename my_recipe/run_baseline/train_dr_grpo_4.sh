@@ -65,7 +65,7 @@ gen_tp=1
 ray job submit --runtime-env="${RUNTIME_ENV}" \
     -- python3 -m my_recipe.main_motivation \
     data.train_files="${TRAIN_FILE}" \
-    data.val_files=["${AIME_2024}","${AIME_2025}","${MATH_500}"] \
+    data.val_files=["${AIME_2024}","${AIME_2025}"] \
     data.prompt_key=prompt \
     data.truncation='left' \
     data.max_prompt_length=${max_prompt_length} \
