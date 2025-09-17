@@ -1,8 +1,2 @@
-from .model import GPRVariancePredictor, GPRConfig
-from .data import make_bounded_regression
-
-__all__ = [
-    "GPRVariancePredictor",
-    "GPRConfig",
-    "make_bounded_regression",
-]
+from .time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
+from .model_v1 import SequentialGPR

@@ -1,37 +1,3 @@
-"""
-TimeDataSimulator: utility to prepare time-sliced train/test feature tensors (X, y, P)
-from embedding, pairwise, and per-question regression JSON data.
-
-Inputs
-- embedding_path: .npy file with shape (N, D)
-- pairwise_path: .npy file with shape (N, N)
-- indices_path: .json file listing question IDs in order corresponding to rows of
-  embeddings and pairwise matrix
-- regression_json_path: .json mapping question ID -> dict with time series keys
-
-APIs
-- get_total_gradient_steps(batch_size): number of steps based on total observations
-- step_to_epoch_step(step, batch_size, total_data_points): epoch and offset
-- get_data_at_step(step, batch_size, target_key): slice a batch of items at a step
-- prepare_time_window_data(step, window_size, batch_size, target_key): aggregate
-  train across previous steps in window and create test for current step
-- build_features(dict_data): turn {qid: value} into (X, P, y)
-
-Returns
-- For prepare(step,...): a dict with
-  {
-    'train': {'X': np.ndarray, 'P': np.ndarray, 'y': np.ndarray, 'qids': List},
-    'test':  {'X': np.ndarray, 'P': np.ndarray, 'y': np.ndarray, 'qids': List},
-  }
-
-Notes
-- QID normalization: if regression_data uses string keys while indices are of another
-  type, we try to harmonize by casting to string for internal lookups, while also
-  caching the original forms for returned qids.
-- Safety checks ensure qids all exist in the indices mapping; missing items are
-  dropped with a warning to avoid runtime errors.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,7 +18,7 @@ class TimeDataSimulatorConfig:
     indices_path: str
     regression_json_path: str
     total_data_points: Optional[int] = None  # default: len(indices)
-
+    batch_size: int = 256
 
 class TimeDataSimulator:
     def __init__(self, config: TimeDataSimulatorConfig):
@@ -71,14 +37,16 @@ class TimeDataSimulator:
         # Load regression data and normalize keys to str
         with open(config.regression_json_path, "r") as f:
             raw_reg = json.load(f)
-        # regression_data: Dict[str, Dict[str, List or Any]]
-        self.regression_data: Dict[str, Any] = {str(k): v for k, v in raw_reg.items()}
+
+        num_keep = (len(raw_reg) // config.batch_size) * config.batch_size
+        keep_keys = list(raw_reg.keys())[:num_keep]
+        self.regression_data: Dict[str, Any] = {str(k): v for k, v in raw_reg.items() if k in keep_keys}
 
         # Optionally set total data points from indices if not provided
         self.total_data_points = (
             config.total_data_points if config.total_data_points is not None else len(self.indices)
         )
-
+        self.batch_size = config.batch_size
         # Basic shape checks
         n = len(self.indices)
         if self.embeddings.shape[0] != n:
@@ -91,56 +59,57 @@ class TimeDataSimulator:
             )
 
     # ----- Step utilities -----
-    def get_total_gradient_steps(self, batch_size: int = 256, target_key: str = "mean_acc_per_epoch") -> int:
+    def get_total_gradient_steps(self, target_key: str = "mean_acc_per_epoch") -> int:
+        # Always use configured batch size
         total_observations = 0
         for _, value in self.regression_data.items():
             # value[target_key] is expected to be a list/sequence over time
             series = value.get(target_key, [])
             total_observations += len(series)
-        return total_observations // batch_size
+        return total_observations // self.batch_size
 
-    def step_to_epoch_step(self, step: int, batch_size: int = 256) -> Tuple[int, int]:
-        epoch = (step * batch_size) // self.total_data_points
-        epoch_step = (step * batch_size) % self.total_data_points
+    def step_to_epoch_step(self, step: int) -> Tuple[int, int]:
+        # Always use configured batch size
+        epoch = (step * self.batch_size) // self.total_data_points
+        epoch_step = (step * self.batch_size) % self.total_data_points
         return epoch, epoch_step
 
     def get_data_at_step(
         self,
         step: int,
-        batch_size: int = 256,
         target_key: str = "mean_acc_per_epoch",
     ) -> Dict[str, Any]:
-        _, epoch_step = self.step_to_epoch_step(step, batch_size)
+        # Always use configured batch size
+        epoch, epoch_step = self.step_to_epoch_step(step)
         # only consider keys present in indices/qid mapping
-        keys_filtered = sorted([k for k in self.regression_data.keys() if k in self.qid_to_idx])
+        keys_filtered = [k for k in self.regression_data.keys() if k in self.qid_to_idx]
+        # keys_filtered = sorted([k for k in self.regression_data.keys() if k in self.qid_to_idx])
         if not keys_filtered:
             return {}
 
         n = len(keys_filtered)
-        bs = min(batch_size, n)
+        bs = min(self.batch_size, n)
         # cycle over keys to always return a batch
         selected_keys = [keys_filtered[(epoch_step + i) % n] for i in range(bs)]
-
         # Return the full series for each selected key (mirrors notebook behavior)
-        data_at_step = {k: self.regression_data[k][target_key] for k in selected_keys}
+        data_at_step = {k: self.regression_data[k][target_key][epoch] for k in selected_keys}
         return data_at_step
 
     def prepare_time_window_data(
         self,
         step: int,
         window_size: int = 2,
-        batch_size: int = 256,
         target_key: str = "mean_acc_per_epoch",
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Aggregate train over [step - window_size, step) and test at current step.
 
         Returns (train_dict, test_dict) where each is {qid: value}.
         """
-        test_data = self.get_data_at_step(step, batch_size, target_key)
+        test_data = self.get_data_at_step(step, target_key)
         train_data: Dict[str, Any] = {}
         start = max(0, step - window_size)
         for s in range(start, step):
-            d = self.get_data_at_step(s, batch_size, target_key)
+            d = self.get_data_at_step(s, target_key)
             train_data.update(d)
         return train_data, test_data
 
@@ -206,17 +175,16 @@ class TimeDataSimulator:
         self,
         step: int,
         window_size: int = 2,
-        batch_size: int = 256,
         target_key: str = "mean_acc_per_epoch",
     ) -> Dict[str, Dict[str, Any]]:
+        # Always use configured batch size
         train_dict, test_dict = self.prepare_time_window_data(
-            step=step, window_size=window_size, batch_size=batch_size, target_key=target_key
+            step=step, window_size=window_size, target_key=target_key
         )
 
         X_tr, P_tr, y_tr, qids_tr = self.build_features(train_dict)
         X_te, P_te, y_te, qids_te = self.build_features(test_dict)
-
         return {
-            "train": {"X": X_tr, "P": P_tr, "y": y_tr, "qids": qids_tr},
-            "test": {"X": X_te, "P": P_te, "y": y_te, "qids": qids_te},
+            "train": {"X": X_tr, "P": P_tr, "y": y_tr, "qids": qids_tr, "indices": [self.qid_to_idx[q] for q in qids_tr]},
+            "test": {"X": X_te, "P": P_te, "y": y_te, "qids": qids_te, "indices": [self.qid_to_idx[q] for q in qids_te]},
         }

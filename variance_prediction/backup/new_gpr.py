@@ -13,7 +13,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from variance_prediction.new_benchmark import run_new_benchmark
+from variance_prediction.backup.new_benchmark import run_new_benchmark
 from variance_prediction.cli_args import parse_args
 from variance_prediction.time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
 
