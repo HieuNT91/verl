@@ -12,7 +12,8 @@ notebook/large_notebook
 **/*.safetensors
 **/blobs
 ckpts/
-data/
+data/embedding_data
+*.parquet
 apex/
 # Byte-compiled / optimized / DLL files
 __pycache__/
