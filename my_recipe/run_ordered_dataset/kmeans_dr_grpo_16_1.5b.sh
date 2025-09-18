@@ -1,6 +1,6 @@
 #!/bin/bash
 project_name='Baseline'
-exp_name='Qwen2.5-Math-1.5B-dpp-dr-grpo-16'
+exp_name='Qwen2.5-Math-1.5B-kmeans-dr-grpo-16'
 
 adv_estimator=grpo
 

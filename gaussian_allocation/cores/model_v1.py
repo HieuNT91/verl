@@ -4,6 +4,10 @@ from scipy.linalg import cho_solve, cholesky, solve_triangular
 def kernel_rbf(d, length_scale):
     return np.exp(-0.5 * (d / length_scale) ** 2)
 
+def kernel_rbf_median(d):
+    length_scale = np.median(d[np.triu_indices_from(d,k=1)].nonzero())
+    return np.exp(-0.5 * (d / length_scale) ** 2)
+
 PRIOR_VALUE = -5
 class SequentialGPR:
     def __init__(self, 
@@ -15,7 +19,7 @@ class SequentialGPR:
                  ):
         self.distance_matrix = distance_matrix
         self.length_scale = length_scale
-        self.covariance_matrix = kernel_rbf(distance_matrix, length_scale=length_scale)
+        self.covariance_matrix = kernel_rbf_median(distance_matrix)
         self.mean = np.zeros(self.covariance_matrix.shape[0])  + PRIOR_VALUE
         self.reuse_covariance = reuse_covariance
         self.reuse_mean = reuse_mean
@@ -28,16 +32,17 @@ class SequentialGPR:
     def _sigmoid(self, f):
         return 1.0 / (1.0 + np.exp(-f))
     
+    
     def fit(self, train_indices, observations):
         # self.covariance_matrix = kernel_rbf(self.distance_matrix, length_scale=self.length_scale)
         if not self.reuse_mean:
             self.mean = np.zeros(self.covariance_matrix.shape[0])  + PRIOR_VALUE
         # g_t = self._logit(observations)
-        g_t = self._logit(np.clip(observations + 0.1, a_max=1-1e-6, a_min=1e-6))
+        g_t = self._logit(np.clip(observations , a_max=1-1e-6, a_min=1e-6))
         # mean_in = self.mean[train_indices]
         K_in_in = self.covariance_matrix[np.ix_(train_indices, train_indices)]
 
-        L = cholesky(K_in_in + 1e-4 * np.eye(K_in_in.shape[0]), lower=True, check_finite=False)
+        L = cholesky(K_in_in + 1e-6 * np.eye(K_in_in.shape[0]), lower=True, check_finite=False)
         alpha = cho_solve((L, True), g_t - self.mean[train_indices], check_finite=False)
 
         # y_centered = g_t - mean_in
@@ -93,7 +98,6 @@ if "__main__" == __name__:
     # print("[Test] Predicted means:", mean_pred)
     # print("[Test] Predicted covariances:", cov_pred)
     
-    
     # Test with time data 
     from time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
     cfg = TimeDataSimulatorConfig(
@@ -105,12 +109,18 @@ if "__main__" == __name__:
     )
     sim = TimeDataSimulator(cfg)
     gpr = SequentialGPR(sim.pairwise_matrix, 
-                        length_scale=1.0,
+                        length_scale=0.6,
                         return_std=False,
                         reuse_covariance=False,
                         reuse_mean=False,
                         )
-    for step in range(1, 30, 1):
+    
+    
+    
+    
+    
+    
+    for step in range(1, 120, 1):
         out = sim.get_train_test_features(
             step=step,
             window_size=1,
@@ -143,7 +153,7 @@ if "__main__" == __name__:
         mse_test = mean_squared_error(y_test, mean_pred_test)
         r2_test = r2_score(y_test, mean_pred_test)
         almost_close_count = np.sum(
-            (abs(y_test - mean_pred_test) <= 0.1)
+            (abs(y_test - mean_pred_test) <= 0.2)
         )
 
         # optional: convert to proportion if desired
@@ -153,7 +163,7 @@ if "__main__" == __name__:
         print(f"Step {step} - Test MSE: {mse_test:.3f}, R2: {r2_test:.3f}, Almost Close Ratio: {almost_close_ratio:.3f}, Min Pred: {mean_pred_test.min():.4f}, Max Pred: {mean_pred_test.max():.4f}, std Pred: {np.std(mean_pred_test):.4f}")
         # Print a few example predictions for test set
         # print("Example test predictions:")
-        for i in range(min(30, len(mean_pred_test))):
+        for i in range(min(5, len(mean_pred_test))):
             print(f"  y_true={y_test[i]:.4f}, y_pred={mean_pred_test[i]:.4f}")
         
         # linear regression 

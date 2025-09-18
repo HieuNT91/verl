@@ -46,6 +46,7 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.profiler import marked_timer
 from verl.utils.rollout_skip import RolloutSkip
+from cores.allocation_v1 import allocate_rollout
 
 
 class RayDAPOTrainer(RayPPOTrainer):
@@ -194,7 +195,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                         print(f"Epoch {self.current_epoch}, Step {self.global_steps}: "
                               f"Adaptive repeats - Total: {total_repeats}, Avg: {avg_repeats:.2f}, "
                               f"Questions: {len(repeat_times_per_question)}")
-                    # Apply adaptive repeating
+                    
                     gen_batch = self._apply_adaptive_repeat(gen_batch, batch_dict, repeat_times_per_question)
 
                 is_last_step = self.gen_steps >= self.total_training_steps
@@ -255,19 +256,19 @@ class RayDAPOTrainer(RayPPOTrainer):
                         # For selection-based allocation, select from pool based on std and then apply KL after selection
                         if self.enable_selection_allocation:
                             # Compare tokens before vs after selection
-                            selected_batch, repeat_times_per_question = self._allocate_and_select_from_pool(new_batch, batch_dict)
+                            selected_batch, repeat_times_per_question = self._allocate_and_select_from_pool(new_batch, batch_dict, batch_budget=len(batch_dict['index'])*self.config.actor_rollout_ref.rollout.n//2, upper=self.config.actor_rollout_ref.rollout.n)
                             selected_tokens = self._count_generated_tokens(selected_batch)
                             selected_rollouts = len(selected_batch)
                             saved_tokens = max(0, pool_tokens - selected_tokens)
                             saved_rollouts = max(0, pool_rollouts - selected_rollouts)
                             saved_ratio = (saved_tokens / pool_tokens) if pool_tokens > 0 else 0.0
-                            
+
                             # Update accumulated tracking
                             self.accumulated_selected_tokens += selected_tokens
                             self.accumulated_saved_tokens += saved_tokens
                             self.accumulated_selected_rollouts += selected_rollouts
                             self.accumulated_saved_rollouts += saved_rollouts
-                            
+
                             metrics.update({
                                 "tokens/pool_total": pool_tokens,
                                 "tokens/selected_total": selected_tokens,
@@ -759,10 +760,6 @@ class RayDAPOTrainer(RayPPOTrainer):
         Returns:
             dict: Mapping from question UUID to repeat times
         """
-        if 'index' not in batch_dict:
-            # Fallback to default repeat times if no index available
-            default_repeat = self.config.actor_rollout_ref.rollout.n
-            return {f"unknown_{i}": default_repeat for i in range(len(batch_dict.get('input_ids', [])))}
         
         question_uuids = batch_dict['index']
         if not isinstance(question_uuids, (list, tuple, np.ndarray)):
@@ -827,9 +824,6 @@ class RayDAPOTrainer(RayPPOTrainer):
         Returns:
             DataProto: Batch with adaptive repeating applied
         """
-        if 'index' not in batch_dict:
-            # Fallback to original repeat logic if no index available
-            return gen_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
         
         question_uuids = batch_dict['index']
         if not isinstance(question_uuids, (list, tuple, np.ndarray)):
@@ -905,7 +899,12 @@ class RayDAPOTrainer(RayPPOTrainer):
             raise ValueError("Failed to compute response mask")
             # return 0
 
-    def _allocate_and_select_from_pool(self, pool_batch, original_batch_dict):
+    # allocate_rollout(question_accs, batch_budget, upper=32)
+    def _allocate_and_select_from_pool(self, pool_batch, 
+                                       original_batch_dict,
+                                       batch_budget,
+                                       upper,
+                                       ):
         """
         From a pool of generated responses (uniform fixed count per question),
         estimate per-question std of accuracy, compute allocation, and select k
@@ -918,11 +917,6 @@ class RayDAPOTrainer(RayPPOTrainer):
         Returns:
             tuple: (selected_batch: DataProto, repeat_times_per_question: dict)
         """
-        if 'index' not in original_batch_dict:
-            # Fallback: no indexing info, return as-is with uniform repeats
-            default_repeat = self.config.actor_rollout_ref.rollout.n
-            fallback_repeat = {f"unknown_{i}": default_repeat for i in range(len(pool_batch))}
-            return pool_batch, fallback_repeat
 
         # Normalize question uuid list
         question_uuids = original_batch_dict['index']
@@ -935,9 +929,7 @@ class RayDAPOTrainer(RayPPOTrainer):
 
         # If acc is missing, we cannot estimate std; return as-is
         if pool_uuids is None or pool_acc is None:
-            default_repeat = self.config.actor_rollout_ref.rollout.n
-            uniform_repeat = {uuid: default_repeat for uuid in question_uuids}
-            return pool_batch, uniform_repeat
+            raise ValueError("Pool batch must contain 'index' and 'acc' in non_tensor_batch")
 
         # Build mapping uuid -> indices in the pool
         uuid_to_indices: dict = {}
@@ -945,28 +937,26 @@ class RayDAPOTrainer(RayPPOTrainer):
             uuid_to_indices.setdefault(u, []).append(idx)
 
         # Compute std of accuracy per question
-        std_per_uuid: dict[str, float] = {}
+        acc_per_uuid: dict[str, float] = {}
         for uuid in question_uuids:
-            idxs = uuid_to_indices.get(uuid, [])
+            idxs = uuid_to_indices.get(uuid)
             if len(idxs) <= 1:
-                std_per_uuid[uuid] = 0.0
+                acc_per_uuid[uuid] = 0.0
             else:
                 acc_vals = np.asarray([pool_acc[i] for i in idxs], dtype=float)
-                std_per_uuid[uuid] = float(np.std(acc_vals))
+                acc_per_uuid[uuid] = float(np.mean(acc_vals))
+
 
         # Compute allocation based on std without normalizing by total std
         # Rescale std in [0, 0.5] -> [0, 1] and use scaled_std * rollout.n as allocation
         default_repeat = self.config.actor_rollout_ref.rollout.n
 
+        allocated_budget = allocate_rollout(list(acc_per_uuid.values()), batch_budget=batch_budget, upper=upper)
+        allocated_budget = [budget + self.min_repeat_times for budget in allocated_budget]  # Add a small constant to avoid zero allocation
         repeat_times_per_question: dict[str, int] = {}
-        for uuid in question_uuids:
-            raw_std = std_per_uuid.get(uuid, 0.0)
-            scaled_std = min(max(raw_std / 0.5, 0.0), 1.0)
-            alloc = int(scaled_std * default_repeat)
-            alloc = max(self.min_repeat_times, alloc)
-            alloc = min(default_repeat, alloc)
+        for uuid, alloc in zip(question_uuids, allocated_budget):
             repeat_times_per_question[uuid] = alloc
-
+        
         # Randomly select indices per question according to allocation
         if self.selection_random_seed is not None:
             rng = np.random.default_rng(self.selection_random_seed + int(self.global_steps))
@@ -976,8 +966,8 @@ class RayDAPOTrainer(RayPPOTrainer):
         selected_indices: list[int] = []
         per_uuid_selected_indices: dict[str, list[int]] = {}
         for uuid in question_uuids:
-            available = uuid_to_indices.get(uuid, [])
-            k = min(len(available), repeat_times_per_question.get(uuid, 0))
+            available = uuid_to_indices.get(uuid)
+            k = min(len(available), repeat_times_per_question.get(uuid))
             if k <= 0:
                 continue
             if k == len(available):
@@ -993,39 +983,6 @@ class RayDAPOTrainer(RayPPOTrainer):
             # Adjust repeats to uniform minimum within pool size
             for uuid in question_uuids:
                 repeat_times_per_question[uuid] = min(default_repeat, max(self.min_repeat_times, 1))
-
-        # Ensure divisibility by world size by padding selections if necessary
-        world_size = self.actor_rollout_wg.world_size
-        if world_size > 0:
-            remainder = len(selected_indices) % world_size
-            if remainder != 0:
-                need = world_size - remainder
-                extra_indices: list[int] = []
-                # First, try to take unused indices from the same question pools
-                for uuid in question_uuids:
-                    if need == 0:
-                        break
-                    available = uuid_to_indices.get(uuid, [])
-                    already = set(per_uuid_selected_indices.get(uuid, []))
-                    candidates = [idx for idx in available if idx not in already]
-                    if not candidates:
-                        continue
-                    take = min(need, len(candidates))
-                    add = rng.choice(candidates, size=take, replace=False).tolist()
-                    per_uuid_selected_indices.setdefault(uuid, []).extend(add)
-                    repeat_times_per_question[uuid] = repeat_times_per_question.get(uuid, 0) + len(add)
-                    extra_indices.extend(add)
-                    need -= len(add)
-                # If still need more, allow duplicating already selected indices (no new rollouts)
-                if need > 0 and len(selected_indices) > 0:
-                    dup_add = rng.choice(selected_indices, size=need, replace=True).tolist()
-                    extra_indices.extend(dup_add)
-                    # Update per-question allocations for duplicates
-                    for idx in dup_add:
-                        uuid = pool_uuids[idx]
-                        repeat_times_per_question[uuid] = repeat_times_per_question.get(uuid, 0) + 1
-                # Append extras to selections
-                selected_indices.extend(extra_indices)
 
         # Create the selected subset DataProto
         selected_batch = pool_batch.select_idxs(selected_indices)
