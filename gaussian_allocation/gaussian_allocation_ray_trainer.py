@@ -559,10 +559,10 @@ class RayDAPOTrainer(RayPPOTrainer):
         rollout_n = int(self.config.actor_rollout_ref.rollout.n)
         batch_budget = batch_size * rollout_n
 
-        allocated = allocate_rollout(list(map(float, mean_pred)), 
+        allocated = allocate_rollout(np.round(mean_pred, 5).tolist(), 
                                      batch_budget=batch_budget, 
                                      upper=self.gpr_upper)
-        
+        print(allocated)
         # Map back to full question_uuids list (use 0 for those not in kept_current)
         repeat_times: dict = {}
         alloc_map = {q: int(a) for q, a in zip(kept_current, allocated)}
