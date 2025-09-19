@@ -19,19 +19,19 @@ overlong_buffer_len=$((1024 * 3))
 overlong_penalty_factor=1.0
 
 loss_agg_mode="token-mean"
-enable_adaptive_repeat=False
+enable_adaptive_repeat=True
 # GPR allocation params
 enable_gpr_allocation=True
 gpr_upper=16
-gpr_embedder="all-MiniLM-L6-v2"
-gpr_dataset="fixprompt-dapo-math-17k_17398"
-gpr_data_root="/home/hieunt/verl/data/embedding_data"
+gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
+gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
+gpr_data_root="/root/code_space/verl/data/embedding_data"
 
 filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=16
+n_resp_per_prompt=4
 train_prompt_mini_bsz=32
 min_repeat_times=4
 ema_decay=0.9
@@ -69,7 +69,7 @@ offload=True
 gen_tp=1
 
 ray job submit --runtime-env="${RUNTIME_ENV}" \
-    -- python3 -m my_recipe.main_motivation \
+    -- python3 -m gaussian_allocation.main_gaussian_allocation \
     data.train_files="${TRAIN_FILE}" \
     data.val_files=["${AIME_2024}","${AIME_2025}"] \
     data.prompt_key=prompt \
@@ -154,7 +154,7 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     trainer.total_training_steps=200 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
-    data.shuffle=True \
-    trainer.val_before_train=True \
+    data.shuffle=False \
+    trainer.val_before_train=False \
     trainer.log_val_generations=17920 \
     

@@ -47,12 +47,33 @@ except Exception as e:  # pragma: no cover
     raise RuntimeError("Please install 'sentence-transformers' to compute embeddings.") from e
 
 
-DEFAULT_PROMPT_TEMPLATE = (
-    "Solve the following math problem step by step. The last line of your response should be "
-    "of the form Answer: $Answer (without quotes) where $Answer is the answer to the problem.\n\n"
-    "{{question}}\n\nRemember to put your answer on its own line after \"Answer:\"."
-)
+# DEFAULT_PROMPT_TEMPLATE = (
+#     "Solve the following math problem step by step. The last line of your response should be "
+#     "of the form Answer: $Answer (without quotes) where $Answer is the answer to the problem.\n\n"
+#     "{{question}}\n\nRemember to put your answer on its own line after \"Answer:\"."
+# )
 
+DEFAULT_PROMPT_TEMPLATE = r"""Solve the following math problem step by step. The last line of your response should be of the form Answer: $Answer (without quotes) where $Answer is the answer to the problem. Do not wrap $Answer with \boxed{}.
+
+current question: {{question}}
+
+Below are two examples for format reference.
+Example question 1: Solve for x: 3x - 5 = 16.
+
+Response:
+Add 5 to both sides: 3x = 21.
+Divide both sides by 3: x = 7.
+Answer: 7
+
+Example question 2: A jacket costs $80 and is on sale for 25% off. What is the sale price?
+
+Response:
+25% of 80 is 0.25 × 80 = 20.
+Subtract the discount from the original price: 80 − 20 = 60.
+Answer: 60
+
+Solve the current question. Remember to put your answer on its own line after "Answer:".
+"""
 
 def sanitize_name(name: str) -> str:
     """Sanitize a string for safe filenames: replace slashes/spaces, keep [A-Za-z0-9_.-]."""
@@ -69,9 +90,8 @@ def extract_question_from_prompt(prompt_content: str, template: str) -> str:
     split_token = "\n\n"
     if split_token in template:
         parts = template.split(split_token)
-        # We expect ... + "{{question}}" + ...
-        if "{{question}}" in parts[-2]:
-            prefix = split_token.join(parts[:-2]) + split_token
+        if "{{question}}" in parts[1]:
+            prefix = split_token.join(parts[:1]) + split_token
             question = prompt_content.replace(prefix, "").strip()
             if split_token in question:
                 question = question.split(split_token)[0].strip()
@@ -79,7 +99,7 @@ def extract_question_from_prompt(prompt_content: str, template: str) -> str:
     # Fallback: take the second last block
     blocks = re.split(r"\n\n", prompt_content)
     if len(blocks) > 1:
-        return blocks[-2].strip()
+        return blocks[1].strip()
     return prompt_content.strip()
 
 
@@ -112,7 +132,7 @@ def load_dataset_questions(
     with ThreadPoolExecutor(max_workers=64) as executor:
         results = list(tqdm(executor.map(extract_one, range(num_samples)), total=num_samples, desc="Extracting questions (parallel)"))
     for i, (q, idx) in enumerate(results):
-        questions[i] = q
+        questions[i] = q.replace("current question: ","")
         indices[i] = idx
 
     return questions, indices
@@ -206,7 +226,6 @@ def main() -> None:
     # Load and extract questions/indices
     questions, indices = load_dataset_questions(parquet_path, args.prompt_template, num_samples)
     n = len(questions)
-
     # Compute embeddings
     embeddings = compute_embeddings(embedder_name, questions)
 

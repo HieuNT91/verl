@@ -46,8 +46,8 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.profiler import marked_timer
 from verl.utils.rollout_skip import RolloutSkip
-from cores.allocation_v1 import allocate_rollout
-from cores.model_v2 import SequentialGPR
+from gaussian_allocation.cores.allocation_v1 import allocate_rollout
+from gaussian_allocation.cores.model_v2 import SequentialGPR
 
 
 class RayDAPOTrainer(RayPPOTrainer):
@@ -475,37 +475,34 @@ class RayDAPOTrainer(RayPPOTrainer):
             stats['current_epoch_score_values'].append(score)
 
             # For GPR, remember last batch's per-question acc (latest seen value wins)
-            last_batch_accs[question_uuid] = float(acc)
 
-        if last_batch_accs:
-            self._last_batch_accs = last_batch_accs
+        for question_uuid in question_uuids.tolist():
+            q_accs = self.per_question_statistics[question_uuid]['current_epoch_acc_values']
+            last_batch_accs[question_uuid] = np.mean(q_accs)
+        self._last_batch_accs = last_batch_accs
+
 
     def _ensure_gpr_artifacts(self):
         if self._gpr_ready:
             return
-        try:
-            pairwise_path = os.path.join(self.gpr_data_root, f"pairwise_{self.gpr_embedder}_{self.gpr_dataset}_matrix.npy")
-            indices_path = os.path.join(self.gpr_data_root, f"indices_{self.gpr_embedder}_{self.gpr_dataset}.json")
-            if not (os.path.exists(pairwise_path) and os.path.exists(indices_path)):
-                print(f"GPR artifacts not found: {pairwise_path} or {indices_path}")
-                self._gpr_ready = False
-                return
-            import json as _json
-            self._gpr_pairwise = np.load(pairwise_path)
-            with open(indices_path, 'r') as f:
-                indices_list = _json.load(f)
-            # Build mapping str(qid) -> index
-            self._gpr_qid_to_idx = {str(qid): i for i, qid in enumerate(indices_list)}
-            self._gpr_ready = True
-        except Exception as e:
-            print(f"Failed to load GPR artifacts: {e}")
+        pairwise_path = os.path.join(self.gpr_data_root, f"pairwise_{self.gpr_embedder.replace('/','-')}_{self.gpr_dataset}_matrix.npy")
+        indices_path = os.path.join(self.gpr_data_root, f"indices_{self.gpr_embedder.replace('/','-')}_{self.gpr_dataset}.json")
+        if not (os.path.exists(pairwise_path) and os.path.exists(indices_path)):
+            print(f"GPR artifacts not found: {pairwise_path} or {indices_path}")
             self._gpr_ready = False
+            return
+        import json as _json
+        self._gpr_pairwise = np.load(pairwise_path)
+        with open(indices_path, 'r') as f:
+            indices_list = _json.load(f)
+        # Build mapping str(qid) -> index
+        self._gpr_qid_to_idx = {str(qid): i for i, qid in enumerate(indices_list)}
+        self._gpr_ready = True
 
     def _gpr_allocate_repeat_times(self, batch_dict):
         question_uuids = batch_dict['index']
         if not isinstance(question_uuids, (list, tuple, np.ndarray)):
             question_uuids = [question_uuids]
-
         # Preconditions
         if not self._last_batch_accs:
             print("[GPR] Skipping: no last-batch accuracies available yet.")
@@ -565,7 +562,7 @@ class RayDAPOTrainer(RayPPOTrainer):
         allocated = allocate_rollout(list(map(float, mean_pred)), 
                                      batch_budget=batch_budget, 
                                      upper=self.gpr_upper)
-
+        
         # Map back to full question_uuids list (use 0 for those not in kept_current)
         repeat_times: dict = {}
         alloc_map = {q: int(a) for q, a in zip(kept_current, allocated)}
