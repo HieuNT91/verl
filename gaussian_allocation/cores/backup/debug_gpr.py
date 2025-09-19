@@ -16,7 +16,7 @@ if PROJECT_ROOT not in sys.path:
 from variance_prediction.benchmark import run_benchmark
 from variance_prediction.model import GPRVariancePredictor
 from variance_prediction.data import make_bounded_regression, make_california_prob_dataset
-from variance_prediction.time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
+from cores.time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
 from variance_prediction.cli_args import parse_args
 
 

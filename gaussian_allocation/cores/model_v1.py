@@ -116,10 +116,6 @@ if "__main__" == __name__:
                         )
     
     
-    
-    
-    
-    
     for step in range(1, 120, 1):
         out = sim.get_train_test_features(
             step=step,
