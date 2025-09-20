@@ -46,7 +46,7 @@ from verl.trainer.ppo.ray_trainer import (
 )
 from verl.utils.profiler import marked_timer
 from verl.utils.rollout_skip import RolloutSkip
-from gaussian_allocation.cores.allocation_v1 import allocate_rollout
+from gaussian_allocation.cores.allocation_v1 import allocate_rollout, allocate_rollout_rloo
 from gaussian_allocation.cores.model_v2 import SequentialGPR
 
 
@@ -558,10 +558,16 @@ class RayDAPOTrainer(RayPPOTrainer):
         batch_size = len(question_uuids)
         rollout_n = int(self.config.actor_rollout_ref.rollout.n)
         batch_budget = batch_size * rollout_n
-
-        allocated = allocate_rollout(np.round(mean_pred, 5).tolist(), 
-                                     batch_budget=batch_budget, 
-                                     upper=self.gpr_upper)
+        
+        if self.config.algorithm.adv_estimator == AdvantageEstimator.RLOO:
+            allocated = allocate_rollout_rloo(np.round(mean_pred, 5).tolist(), 
+                                        batch_budget=batch_budget, 
+                                        upper=self.gpr_upper)
+        else:
+            allocated = allocate_rollout(np.round(mean_pred, 5).tolist(), 
+                                        batch_budget=batch_budget, 
+                                        upper=self.gpr_upper)
+            
         print(allocated)
         # Map back to full question_uuids list (use 0 for those not in kept_current)
         repeat_times: dict = {}

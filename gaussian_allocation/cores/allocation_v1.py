@@ -1,11 +1,11 @@
 import numpy as np
 from scipy.optimize import root_scalar
 from functools import lru_cache
-
-
+from scipy.optimize import minimize
+    
+    
 def acc_to_var(acc):
     return acc * (1 - acc)
-
 
 def solve_n_cubic(lmbda: float, a: float):
     # Solve a*(n + 2) / (n + 4)^3 = lmbda  -> lmbda n^3 + 12 lmbda n^2 + (48 lmbda - a) n + (64 lmbda - 2a) = 0
@@ -90,7 +90,38 @@ def allocate_rollout(question_accs, batch_budget, upper=32):
     lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
     allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
     rounded_allocated_budgets = allocation_rounding(allocated_budgets, a_list, batch_budget, upper=upper)
-    
+    return rounded_allocated_budgets
+
+
+def calculate_a(p):
+    new_p = np.clip(p, 1e-6, 1-1e-6)
+    return new_p * (1 - new_p)
+
+def solve_rloo(a, question_accs, batch_budget, lower=4, upper=32):
+    gamma = 0
+    # gamma = 0.001
+    b = gamma * np.log(question_accs)
+    def V_rloo(n):
+        return np.sum(a / (n - 1) + b * n)
+    constraints = [
+    {'type': 'eq', 'fun': lambda n: np.sum(n) - batch_budget},
+    ]
+
+    bounds = [(lower, upper) for _ in range(len(a))]  # n_i >= 1
+    n0 = np.ones(len(a)) * (batch_budget / len(a))
+    res = minimize(V_rloo, n0, method='SLSQP', bounds=bounds, constraints=constraints)
+    n_vec = res.x
+    return n_vec
+
+
+def allocate_rollout_rloo(question_accs, batch_budget, upper=32):
+    # a_list = [float(calculate_a(acc)) for acc in question_accs]
+    # lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
+    # allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
+    question_accs = np.clip(question_accs, 1e-6, 1-1e-6)
+    a = question_accs * (1 - question_accs)
+    allocated_budgets = solve_rloo(a, question_accs, batch_budget, lower=4, upper=upper)
+    rounded_allocated_budgets = allocation_rounding(allocated_budgets, a, batch_budget, upper=upper)
     return rounded_allocated_budgets
 
 if "__main__" == __name__:
@@ -105,7 +136,7 @@ if "__main__" == __name__:
     )
     sim = TimeDataSimulator(cfg)
     
-    for step in range(1, 120, 1):
+    for step in range(20, 120, 1):
         out = sim.get_train_test_features(
             step=step,
             window_size=1,
@@ -119,7 +150,7 @@ if "__main__" == __name__:
         indices_train = out["train"]["indices"]
         indices_test = out["test"]["indices"]
 
-        rounded_n = allocate_rollout(y_train, batch_budget=256*12, upper=32)
+        rounded_n = allocate_rollout_rloo(y_train, batch_budget=256*16, upper=32)
         unique_list = []
         for p, n in zip(y_train, rounded_n):
             if (p, n) not in unique_list:
@@ -127,4 +158,19 @@ if "__main__" == __name__:
             else:
                 continue
             print(f"p={p}, n={n}")
+        
+        from matplotlib import pyplot as plt
+        p_vals = [p for p, n in unique_list]
+        n_vals = [n for p, n in unique_list]
+        idx_sort = np.argsort(p_vals)
+        plt.figure(figsize=(10,6))
+        plt.plot(np.array(p_vals)[idx_sort], np.array(n_vals)[idx_sort], 'o-', linewidth=1.5)
+        plt.xlabel(r"$p_i$")
+        plt.ylabel(r"$n_i^*$")
+        plt.title(f"Optimal n_i using RLOO allocation for γ=0.001 at step {step}")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"allocation_rloo_step{step}.png", dpi=300)
+        plt.close()
+        print("-----")
 

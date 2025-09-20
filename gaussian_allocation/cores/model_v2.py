@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 from datetime import datetime
-from gaussian_allocation.cores.allocation_v1 import allocate_rollout
+from allocation_v1 import allocate_rollout
 
 def kernel_rbf(d, length_scale=1):
     return np.exp(-0.5 * (d / length_scale) ** 2)
@@ -172,7 +172,7 @@ def main():
     print(f"  Indices path: {indices_path}")
     print(f"  Regression path: {regression_json_path}")
     
-    from gaussian_allocation.cores.time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
+    from time_data_simulator import TimeDataSimulator, TimeDataSimulatorConfig
     cfg = TimeDataSimulatorConfig(
         embedding_path=embedding_path,
         pairwise_path=pairwise_path,
@@ -220,11 +220,23 @@ def main():
         mean_pred_test, cov_pred_test = gpr.predict_qids(qids_test)
         
         budgeted = allocate_rollout(mean_pred_test, 8*256, upper=32)
-        print(budgeted)
         budgeted = allocate_rollout(np.round(mean_pred_test,2), 8*256, upper=32)
-        print(budgeted)
+        for p, b in zip(mean_pred_test, budgeted):
+            if p >= 0.5 and b < 16:
+                print(f"High pred {p:.4f} but low budget {b}")
+
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(6, 4))
+        plt.scatter(mean_pred_test, budgeted, alpha=0.7, edgecolors='k')
+        plt.xlabel("Predicted mean p")
+        plt.ylabel("Allocated budget")
+        plt.title("Budget allocation vs predicted p")
+        plt.grid(True)
+
+        # save to file (PNG, 300 dpi)
+        plt.savefig("budget_vs_p.png", dpi=300, bbox_inches='tight')
         print(np.std(mean_pred_test), np.std(np.round(mean_pred_test, 2)))
-        
+        breakpoint()
         from sklearn.metrics import mean_squared_error, r2_score
         mse_test = mean_squared_error(y_test, mean_pred_test)
         r2_test = r2_score(y_test, mean_pred_test)

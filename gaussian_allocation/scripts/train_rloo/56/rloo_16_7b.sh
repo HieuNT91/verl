@@ -1,8 +1,8 @@
 #!/bin/bash
-project_name='ablation_true_acc'
-exp_name='Qwen2.5-Math-1.5B-baseline-dr-grpo-true32-allocate8'
+project_name='GaussianAllocation'
+exp_name='Qwen2.5-Math-7B-dpp-rloo-16-ga'
 
-adv_estimator=grpo
+adv_estimator=rloo
 
 use_kl_in_reward=False
 kl_coef=0.0
@@ -20,12 +20,18 @@ overlong_penalty_factor=1.0
 
 loss_agg_mode="token-mean"
 enable_adaptive_repeat=True
-enable_filter_groups=False
+# GPR allocation params
+enable_gpr_allocation=True
+gpr_upper=32
+gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
+gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
+gpr_data_root="/root/code_space/verl/data/embedding_data"
+
 filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=32
+n_resp_per_prompt=16
 train_prompt_mini_bsz=32
 min_repeat_times=4
 ema_decay=0.9
@@ -42,9 +48,9 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-1.5B"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
-TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fix this to dpp.parquet"}
+TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-dapo-math-17k.dpp_ordered.parquet"}
 AIME_2024=${AIME_2024:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
 AIME_2025=${AIME_2025:-"${RAY_DATA_HOME}/data/fixprompt-aime-2025.parquet"}
 MATH_500=${MATH_500:-"${RAY_DATA_HOME}/data/fixprompt-math-500.parquet"}
@@ -63,7 +69,7 @@ offload=True
 gen_tp=1
 
 ray job submit --runtime-env="${RUNTIME_ENV}" \
-    -- python3 -m my_recipe.main_motivation \
+    -- python3 -m gaussian_allocation.main_gaussian_allocation \
     data.train_files="${TRAIN_FILE}" \
     data.val_files=["${AIME_2024}","${AIME_2025}"] \
     data.prompt_key=prompt \
@@ -78,7 +84,13 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.kl_ctrl.kl_coef=${kl_coef} \
     algorithm.ema_decay=${ema_decay} \
     algorithm.min_repeat_times=${min_repeat_times} \
-    algorithm.enable_selection_allocation=True \
+    algorithm.enable_selection_allocation=False \
+    algorithm.enable_adaptive_repeat=${enable_adaptive_repeat} \
+    algorithm.enable_gpr_allocation=${enable_gpr_allocation} \
+    algorithm.gpr_upper=${gpr_upper} \
+    algorithm.gpr_embedder=${gpr_embedder} \
+    algorithm.gpr_dataset=${gpr_dataset} \
+    algorithm.gpr_data_root=${gpr_data_root} \
     algorithm.election_random_seed=1234 \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
@@ -86,7 +98,6 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.actor.clip_ratio_c=10.0 \
-    algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     algorithm.filter_groups.metric=${filter_groups_metric} \
     algorithm.enable_adaptive_repeat=${enable_adaptive_repeat} \
@@ -139,8 +150,8 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     trainer.nnodes="${NNODES}" \
     trainer.test_freq=10 \
     trainer.save_freq=30 \
-    trainer.total_epochs=3 \
-    trainer.total_training_steps=300 \
+    trainer.total_epochs=2 \
+    trainer.total_training_steps=200 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
     data.shuffle=False \
