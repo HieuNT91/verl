@@ -97,32 +97,51 @@ def calculate_a(p):
     new_p = np.clip(p, 1e-6, 1-1e-6)
     return new_p * (1 - new_p)
 
-def solve_rloo(a, question_accs, batch_budget, lower=4, upper=32):
-    gamma = 0
-    # gamma = 0.001
+def solve_rloo(a, question_accs, batch_budget, lower=4, upper=32, allocation_rule="vip"):
+    # gamma = 0
+    gamma = 0.0007
     b = gamma * np.log(question_accs)
+    
     def V_rloo(n):
         return np.sum(a / (n - 1) + b * n)
+    def V_inverse_acc(n):
+        return np.sum(n*np.log(question_accs))
+    def V_inverse_var(n):
+        return np.sum(n*np.log(a))
+    
+    if allocation_rule == "vip":
+        V_func = V_rloo
+    elif allocation_rule == "inverse_acc":
+        V_func = V_inverse_acc
+    elif allocation_rule == "inverse_var":
+        V_func = V_inverse_var
+    else:
+        raise ValueError(f"Unknown allocation method {allocation_rule}")
     constraints = [
     {'type': 'eq', 'fun': lambda n: np.sum(n) - batch_budget},
     ]
-
     bounds = [(lower, upper) for _ in range(len(a))]  # n_i >= 1
     n0 = np.ones(len(a)) * (batch_budget / len(a))
-    res = minimize(V_rloo, n0, method='SLSQP', bounds=bounds, constraints=constraints)
+    res = minimize(V_func, n0, method='SLSQP', bounds=bounds, constraints=constraints)
     n_vec = res.x
     return n_vec
 
 
-def allocate_rollout_rloo(question_accs, batch_budget, upper=32):
+def allocate_rollout_rloo(question_accs, batch_budget, lower=4, upper=32, allocation_rule="vip"):
     # a_list = [float(calculate_a(acc)) for acc in question_accs]
     # lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
     # allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
     question_accs = np.clip(question_accs, 1e-6, 1-1e-6)
     a = question_accs * (1 - question_accs)
-    allocated_budgets = solve_rloo(a, question_accs, batch_budget, lower=4, upper=upper)
+    allocated_budgets = solve_rloo(a, 
+                                   question_accs, 
+                                   batch_budget, 
+                                   lower=lower, 
+                                   upper=upper, 
+                                   allocation_rule=allocation_rule)
     rounded_allocated_budgets = allocation_rounding(allocated_budgets, a, batch_budget, upper=upper)
     return rounded_allocated_budgets
+
 
 if "__main__" == __name__:
     

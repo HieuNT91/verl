@@ -117,6 +117,7 @@ class RayDAPOTrainer(RayPPOTrainer):
         self.gpr_embedder = getattr(self.config.algorithm, 'gpr_embedder', os.getenv('GBR_EMBEDDER', 'all-MiniLM-L6-v2'))
         self.gpr_dataset = getattr(self.config.algorithm, 'gpr_dataset', os.getenv('GBR_DATASET', 'fixprompt-dapo-math-17k_17398'))
         self.gpr_data_root = getattr(self.config.algorithm, 'gpr_data_root', os.getenv('GBR_DATA_ROOT', '/home/hieunt/verl/data/embedding_data'))
+        self.allocation_rule = getattr(self.config.algorithm, 'allocation_rule', 'rloo')
         self._gpr_pairwise = None
         self._gpr_qid_to_idx = None
         self._gpr_ready = False
@@ -561,8 +562,10 @@ class RayDAPOTrainer(RayPPOTrainer):
         
         if self.config.algorithm.adv_estimator == AdvantageEstimator.RLOO:
             allocated = allocate_rollout_rloo(np.round(mean_pred, 5).tolist(), 
-                                        batch_budget=batch_budget, 
-                                        upper=self.gpr_upper)
+                                        batch_budget=batch_budget,
+                                        lower=4 if self.config.actor_rollout_ref.rollout.n > 4 else 0,
+                                        upper=self.gpr_upper,
+                                        allocation_rule=self.allocation_rule)
         else:
             allocated = allocate_rollout(np.round(mean_pred, 5).tolist(), 
                                         batch_budget=batch_budget, 

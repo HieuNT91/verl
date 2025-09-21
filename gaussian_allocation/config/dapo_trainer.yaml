@@ -33,6 +33,7 @@ algorithm:
   gpr_embedder: all-MiniLM-L6-v2
   gpr_dataset: fixprompt-dapo-math-17k_17398
   gpr_data_root: /home/hieunt/verl/data/embedding_data
+  allocation_rule: vip
 
 trainer:
   project_name: verl-dapo
