@@ -1,6 +1,6 @@
 #!/bin/bash
 project_name='GaussianAllocation'
-exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-ga'
+exp_name='Qwen2.5-Math-7B-dpp-rloo8-ga'
 
 adv_estimator=rloo
 
@@ -24,7 +24,7 @@ enable_adaptive_repeat=True
 enable_gpr_allocation=True
 gpr_upper=16
 gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
-gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
+gpr_dataset="fixprompt-nodup-dapo-math-17k.dpp_ordered_17398"
 gpr_data_root="/root/code_space/verl/data/embedding_data"
 
 filter_groups_metric=acc
@@ -48,9 +48,9 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-1.5B"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
-TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-dapo-math-17k.dpp_ordered.parquet"}
+TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-nodup-dapo-math-17k.dpp_ordered.parquet"}
 AIME_2024=${AIME_2024:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
 AIME_2025=${AIME_2025:-"${RAY_DATA_HOME}/data/fixprompt-aime-2025.parquet"}
 MATH_500=${MATH_500:-"${RAY_DATA_HOME}/data/fixprompt-math-500.parquet"}
@@ -149,12 +149,12 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes="${NNODES}" \
     trainer.test_freq=10 \
-    trainer.save_freq=70 \
+    trainer.save_freq=30 \
     trainer.total_epochs=2 \
-    trainer.total_training_steps=70 \
+    trainer.total_training_steps=200 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
     data.shuffle=False \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     trainer.log_val_generations=17920 \
     

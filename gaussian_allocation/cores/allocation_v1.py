@@ -85,32 +85,36 @@ def calculate_a(p):
     return new_p * (1 - new_p)
 
 
-def allocate_rollout(question_accs, batch_budget, upper=32):
-    a_list = [float(calculate_a(acc)) for acc in question_accs]
-    lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
-    allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
-    rounded_allocated_budgets = allocation_rounding(allocated_budgets, a_list, batch_budget, upper=upper)
-    return rounded_allocated_budgets
+# def allocate_rollout(question_accs, batch_budget, upper=32):
+#     a_list = [float(calculate_a(acc)) for acc in question_accs]
+#     lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
+#     allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
+#     rounded_allocated_budgets = allocation_rounding(allocated_budgets, a_list, batch_budget, upper=upper)
+#     return rounded_allocated_budgets
 
 
 def calculate_a(p):
     new_p = np.clip(p, 1e-6, 1-1e-6)
     return new_p * (1 - new_p)
 
-def solve_rloo(a, question_accs, batch_budget, lower=4, upper=32, allocation_rule="vip"):
-    # gamma = 0
-    gamma = 0.0007
-    b = gamma * np.log(question_accs)
-    
+def solve(a, question_accs, batch_budget, lower=4, upper=32, allocation_rule="rloo"):
     def V_rloo(n):
         return np.sum(a / (n - 1) + b * n)
+    def V_grpo(n):
+        return np.sum( (a * (n-1) / n**2) + b * n)
     def V_inverse_acc(n):
         return np.sum(n*np.log(question_accs))
     def V_inverse_var(n):
         return np.sum(n*np.log(a))
     
-    if allocation_rule == "vip":
+    if allocation_rule == "rloo":
+        gamma = 0.0007
+        b = gamma * np.log(question_accs)
         V_func = V_rloo
+    elif allocation_rule == "grpo":
+        gamma = 0.0004
+        b = gamma * np.log(p)
+        V_func = V_grpo
     elif allocation_rule == "inverse_acc":
         V_func = V_inverse_acc
     elif allocation_rule == "inverse_var":
@@ -127,18 +131,18 @@ def solve_rloo(a, question_accs, batch_budget, lower=4, upper=32, allocation_rul
     return n_vec
 
 
-def allocate_rollout_rloo(question_accs, batch_budget, lower=4, upper=32, allocation_rule="vip"):
+def allocate_rollout(question_accs, batch_budget, lower=4, upper=32, allocation_rule="rloo"):
     # a_list = [float(calculate_a(acc)) for acc in question_accs]
     # lmbda = search_for_lmbda(a_list, batch_budget, upper=upper, lower_lmbda=-100, upper_lmbda=100)
     # allocated_budgets = [n_star(a_i, lmbda, upper=upper) for a_i in a_list]
     question_accs = np.clip(question_accs, 1e-6, 1-1e-6)
     a = question_accs * (1 - question_accs)
-    allocated_budgets = solve_rloo(a, 
-                                   question_accs, 
-                                   batch_budget, 
-                                   lower=lower, 
-                                   upper=upper, 
-                                   allocation_rule=allocation_rule)
+    allocated_budgets = solve(a, 
+                            question_accs, 
+                            batch_budget, 
+                            lower=lower, 
+                            upper=upper, 
+                            allocation_rule=allocation_rule)
     rounded_allocated_budgets = allocation_rounding(allocated_budgets, a, batch_budget, upper=upper)
     return rounded_allocated_budgets
 
@@ -169,7 +173,7 @@ if "__main__" == __name__:
         indices_train = out["train"]["indices"]
         indices_test = out["test"]["indices"]
 
-        rounded_n = allocate_rollout_rloo(y_train, batch_budget=256*16, upper=32)
+        rounded_n = allocate_rollout(y_train, batch_budget=256*16, upper=32)
         unique_list = []
         for p, n in zip(y_train, rounded_n):
             if (p, n) not in unique_list:

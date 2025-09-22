@@ -1,6 +1,6 @@
 #!/bin/bash
-project_name='GaussianAllocation'
-exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-ga'
+project_name='GaussianAllocation-ablation'
+exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-inverse_var'
 
 adv_estimator=rloo
 
@@ -27,6 +27,7 @@ gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
 gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
 gpr_data_root="/root/code_space/verl/data/embedding_data"
 
+allocation_rule="inverse_var"
 filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
@@ -92,6 +93,7 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.gpr_dataset=${gpr_dataset} \
     algorithm.gpr_data_root=${gpr_data_root} \
     algorithm.election_random_seed=1234 \
+    algorithm.allocation_rule=${allocation_rule} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \

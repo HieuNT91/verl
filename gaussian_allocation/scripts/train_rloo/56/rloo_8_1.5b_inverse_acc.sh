@@ -1,6 +1,6 @@
 #!/bin/bash
-project_name='GaussianAllocation'
-exp_name='Qwen2.5-Math-7B-dpp-rloo-16-ga'
+project_name='GaussianAllocation-ablation'
+exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-inverse_acc'
 
 adv_estimator=rloo
 
@@ -22,16 +22,17 @@ loss_agg_mode="token-mean"
 enable_adaptive_repeat=True
 # GPR allocation params
 enable_gpr_allocation=True
-gpr_upper=32
+gpr_upper=16
 gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
 gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
 gpr_data_root="/root/code_space/verl/data/embedding_data"
 
+allocation_rule="inverse_acc"
 filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=16
+n_resp_per_prompt=8
 train_prompt_mini_bsz=32
 min_repeat_times=4
 ema_decay=0.9
@@ -48,7 +49,7 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-1.5B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-dapo-math-17k.dpp_ordered.parquet"}
 AIME_2024=${AIME_2024:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
@@ -92,6 +93,7 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     algorithm.gpr_dataset=${gpr_dataset} \
     algorithm.gpr_data_root=${gpr_data_root} \
     algorithm.election_random_seed=1234 \
+    algorithm.allocation_rule=${allocation_rule} \
     actor_rollout_ref.actor.use_kl_loss=${use_kl_loss} \
     actor_rollout_ref.actor.kl_loss_coef=${kl_loss_coef} \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
@@ -149,12 +151,12 @@ ray job submit --runtime-env="${RUNTIME_ENV}" \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes="${NNODES}" \
     trainer.test_freq=10 \
-    trainer.save_freq=30 \
+    trainer.save_freq=70 \
     trainer.total_epochs=2 \
-    trainer.total_training_steps=200 \
+    trainer.total_training_steps=70 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto \
     data.shuffle=False \
-    trainer.val_before_train=True \
+    trainer.val_before_train=False \
     trainer.log_val_generations=17920 \
     

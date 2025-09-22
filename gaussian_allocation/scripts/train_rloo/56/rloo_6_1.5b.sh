@@ -1,6 +1,6 @@
 #!/bin/bash
 project_name='GaussianAllocation'
-exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-ga'
+exp_name='Qwen2.5-Math-1.5B-dpp-rloo-6-ga'
 
 adv_estimator=rloo
 
@@ -22,7 +22,7 @@ loss_agg_mode="token-mean"
 enable_adaptive_repeat=True
 # GPR allocation params
 enable_gpr_allocation=True
-gpr_upper=16
+gpr_upper=12
 gpr_embedder="sentence-transformers/all-MiniLM-L6-v2"
 gpr_dataset="fixprompt-dapo-math-17k.dpp_ordered_17398"
 gpr_data_root="/root/code_space/verl/data/embedding_data"
@@ -31,7 +31,7 @@ filter_groups_metric=acc
 max_num_gen_batches=1
 train_prompt_bsz=256
 gen_prompt_bsz=$((train_prompt_bsz*1))
-n_resp_per_prompt=8
+n_resp_per_prompt=6
 train_prompt_mini_bsz=32
 min_repeat_times=4
 ema_decay=0.9

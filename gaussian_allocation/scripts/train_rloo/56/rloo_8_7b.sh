@@ -1,6 +1,6 @@
 #!/bin/bash
 project_name='GaussianAllocation'
-exp_name='Qwen2.5-Math-1.5B-dpp-rloo-8-ga'
+exp_name='Qwen2.5-Math-7B-dpp-rloo-8-ga'
 
 adv_estimator=rloo
 
@@ -48,7 +48,7 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/code_space/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-1.5B"}
+MODEL_PATH=${MODEL_PATH:-"/root/verl/models/Qwen2.5-Math-7B"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/fixprompt-dapo-math-17k.dpp_ordered.parquet"}
 AIME_2024=${AIME_2024:-"${RAY_DATA_HOME}/data/fixprompt-aime-2024.parquet"}
